@@ -17,7 +17,9 @@ naiveEnsemble <- function(ts, h){
   aa <- forecast(auto.arima(ts), h = h)$mean
   
   # Neural Network
-  nn <- forecast(nnetar(ts, scale.inputs = T, decay = .05), h = h)$mean
+  ss <- AddLocalLinearTrend(list(), ts)
+  model <- bsts(ts,state.specification = ss, niter = 1000)
+  bsts <- predict(model, horizon = h)$mean
   
   # Exponential Smoothing
   ets <- forecast(ets(ts), h = h)$mean
@@ -29,7 +31,7 @@ naiveEnsemble <- function(ts, h){
   # of models fit to the data
   
   # Forecast Matrix
-  fcMat <- as.matrix(cbind(as.numeric(aa), as.numeric(nn), as.numeric(ets), 
+  fcMat <- as.matrix(cbind(as.numeric(aa), as.numeric(bsts), as.numeric(ets), 
                            as.numeric(theta)))
   
   # Return the Forecast Matrix and the average forecast at each point on
@@ -39,7 +41,7 @@ naiveEnsemble <- function(ts, h){
   return(out)
 }
 
-medianEnsemble <- funciton(ts, h){
+medianEnsemble <- function(ts, h){
   # ts is a time series object
   # h is the forecast horizon, the number of data points into the future to forecast
   
@@ -48,7 +50,9 @@ medianEnsemble <- funciton(ts, h){
   aa <- forecast(auto.arima(ts), h = h)$mean
   
   # Neural Network
-  nn <- forecast(nnetar(ts, scale.inputs = T, decay = .05), h = h)$mean
+  ss <- AddLocalLinearTrend(list(), ts)
+  model <- bsts(ts,state.specification = ss, niter = 1000)
+  bsts <- predict(model, horizon = h)$mean
   
   # Exponential Smoothing
   ets <- forecast(ets(ts), h = h)$mean
@@ -60,7 +64,7 @@ medianEnsemble <- funciton(ts, h){
   # of models fit to the data
   
   # Forecast Matrix
-  fcMat <- as.matrix(cbind(as.numeric(aa), as.numeric(nn), as.numeric(ets), 
+  fcMat <- as.matrix(cbind(as.numeric(aa), as.numeric(bsts), as.numeric(ets), 
                            as.numeric(theta)))
   
   # Return the Forecast Matrix and the average forecast at each point on
@@ -151,15 +155,27 @@ testing <- function(M3obj){
   
   mBEAT <- apply(fcMat, 1, median)
   
+  XGStack <- xgStackEnsemble(ts, h = h)
+  
   fcList <- list(accuracy(aa,xx), accuracy(bsts,xx), accuracy(ets,xx), 
-                 accuracy(theta,xx), accuracy(BEAT,xx), accuracy(mBEAT,xx))
+                 accuracy(theta,xx), accuracy(BEAT,xx), accuracy(mBEAT,xx),
+                 accuracy(XGStack, xx))
   
   out <- as.data.frame(do.call(rbind,fcList))
   out$Series <- Series
   out$Period <- Period
-  out$Method <- c("Auto.Arima", "BSTS", "ETS", "THETA", "BEAT", "mBEAT")
+  out$Method <- c("Auto.Arima", "BSTS", "ETS", "THETA", "BEAT", "mBEAT", "XGStack")
   rownames(out) <- NULL
   out %>% dplyr::select(Series, Period, Method, ME, RMSE, MAE, MAPE)
+}
+
+
+# Non Parallel
+list <- list()
+for(i in 1:length(M3)){
+  cat(i, '\n')
+  out <- testing(M3[[i]])
+  list[[i]] <- out
 }
 
 list <- list()
@@ -171,27 +187,18 @@ foreach(i=1:length(M3)) %dopar% {
   n = n + 1
 }
 
-out <- as.data.frame(do.call(rbind, list))
-out %>% group_by(Method) %>% summarise(mRMSE = mean(RMSE))
 
-M4 <- list()
-for(i in 1:100){M4[[i]] <- M3[[i]]}
 
-orig.time <- system.time({
-  list <- list()
-  for(i in 1:length(M4)){
-    cat(i, "\n")
-    out <- testing(M4[[i]])
-    list[[i]] <- out
+
+timeOut <- system.time({ 
+  outDF <- foreach(i = 501:1000) %dopar% {
+    out <- testing(M3[[i]])
   }
 })
 
-par.time <- system.time({ 
-  list <- list()
-  foreach(i=1:length(M4)) %dopar% {
-    out <- testing(M4[[i]])
-    list[[i]] <- out
-  }
-  out <- as.data.frame(do.call(rbind,list))
-  
-})
+chunk <- as.data.frame(do.call(rbind, outDF))
+#final <- chunk
+final <- rbind(final, chunk)
+
+# run at end
+final %>% group_by(Method) %>% summarise(mRMSE = mean(RMSE))

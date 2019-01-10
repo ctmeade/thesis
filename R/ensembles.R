@@ -17,9 +17,11 @@ naiveEnsemble <- function(ts, h){
   aa <- forecast(auto.arima(ts), h = h)$mean
   
   # Neural Network
+  seasonal <- findfrequency(ts)
   ss <- AddLocalLinearTrend(list(), ts)
-  model <- bsts(ts,state.specification = ss, niter = 1000)
-  bsts <- predict(model, horizon = h)$mean
+  if(seasonal>1){ss <- AddSeasonal(ss, ts, nseasons = seasonal)}
+  model <- bsts(ts, state.specification = ss, niter = 2500, family = "gaussian")
+  bsts <- predict(model, horizon = h, burn = 200)$mean
   
   # Exponential Smoothing
   ets <- forecast(ets(ts), h = h)$mean
@@ -89,7 +91,7 @@ xgStackEnsemble <- function(ts, h, validationSize = round(length(ts)/2)){
   # data points into actual validation observations
   xgStack <- xgboost(data = as.matrix(valMat), 
                      label = as.numeric(valid),
-                     nrounds = 200,
+                     nrounds = 1000,
                      eta = 0.1)
   cat("XGB Stack completed")
   
@@ -114,35 +116,47 @@ linStackEnsemble <- function(ts, h, validationSize = round(length(ts)/2)){
   valMat <- naiveEnsemble(train, validationSize)[[1]]
   cat("Validation Predications Made")
   
+  valDF <- as.data.frame(valMat)
+  names(valDF) <- c("aa", "bsts", "ets", "theta")
+  valDF$y <- as.numeric(valid)
+  
   # Use XGBoost algorithm to find best nonlinear transformation of forecasted validation
   # data points into actual validation observations
-  linStack <- lm(valid ~.,
-                 data = as.matrix(valMat))
-  cat("RF Stack completed")
+  linStack <- loess(y ~ aa + bsts + ets + theta,
+                 data = valDF,
+                 control = loess.control(surface = "direct"))
+  cat("Linear Stack completed")
   
   # Combine train and validation sets to make forecasts h steps into the horizon
   fcMat <- naiveEnsemble(ts, h)[[1]]
+  fcDF <- as.data.frame(fcMat)
+  names(fcDF) <- c("aa", "bsts", "ets", "theta")
   cat("Forecast Matrix Created")
-  # Apply the learned XGBoost nonlinear transformation
-  xgPred <- predict(xgStack, fcMat)
+  
+  # Apply the linear transformation
+  linPred <- predict(linStack, fcDF)
   cat("Predictions Made")
   # Return Predictions
-  return(xgPred)
+  return(as.numeric(linPred))
 }
 
 
 testing <- function(M3obj){
-  ts <- M3obj$x
-  xx <- M3obj$xx
+  mean <- mean(c(M3obj$x, M3obj$xx))
+  sd <- sd(c(M3obj$x, M3obj$xx))
+  ts <- (M3obj$x - mean)/sd
+  xx <- (M3obj$xx-mean)/sd
   h <- length(xx)
   Period <- M3obj$eriod
   Series <- M3obj$sn
+  seasonal <- findfrequency(ts)
   
   aa <- forecast(auto.arima(ts), h = h)$mean
   
   ss <- AddLocalLinearTrend(list(), ts)
-  model <- bsts(ts,state.specification = ss, niter = 1000)
-  bsts <- predict(model, horizon = h)$mean
+  if(seasonal>1){ss <- AddSeasonal(ss, ts, nseasons = seasonal)}
+  model <- bsts(ts, state.specification = ss, niter = 2500, family = "gaussian")
+  bsts <- predict(model, horizon = h, burn = 200)$mean
   
   ets <- forecast(ets(ts), h = h)$mean
   
@@ -156,6 +170,7 @@ testing <- function(M3obj){
   mBEAT <- apply(fcMat, 1, median)
   
   XGStack <- xgStackEnsemble(ts, h = h)
+  
   
   fcList <- list(accuracy(aa,xx), accuracy(bsts,xx), accuracy(ets,xx), 
                  accuracy(theta,xx), accuracy(BEAT,xx), accuracy(mBEAT,xx),
@@ -172,11 +187,12 @@ testing <- function(M3obj){
 
 # Non Parallel
 list <- list()
-for(i in 1:length(M3)){
+for(i in 1:100){
   cat(i, '\n')
   out <- testing(M3[[i]])
   list[[i]] <- out
 }
+as.data.frame(do.call(rbind,list)) %>% group_by(Method) %>% summarise(RMSE = mean(RMSE), ME = mean(ME), MAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
 
 list <- list()
 n = 1
@@ -189,16 +205,17 @@ foreach(i=1:length(M3)) %dopar% {
 
 
 
-
+samp <- sample(1:3003, 100)
 timeOut <- system.time({ 
-  outDF <- foreach(i = 501:1000) %dopar% {
+  outDF <- foreach(i = samp) %dopar% {
     out <- testing(M3[[i]])
   }
 })
 
 chunk <- as.data.frame(do.call(rbind, outDF))
-#final <- chunk
+final <- chunk
 final <- rbind(final, chunk)
 
 # run at end
-final %>% group_by(Method) %>% summarise(mRMSE = mean(RMSE))
+final %>% group_by(Method) %>% summarise(RMSE = mean(RMSE), ME = mean(ME), MAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
+

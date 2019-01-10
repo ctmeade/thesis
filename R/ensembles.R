@@ -3,8 +3,11 @@ library(xgboost)
 library(tidyverse)
 library(Mcomp)
 library(bsts)
+library(SuperLearner)
 library(parallel)
 library(doMC)
+library(e1071)
+library(bartMachine)
 
 doMC::registerDoMC(cores = detectCores())
 
@@ -76,7 +79,7 @@ medianEnsemble <- function(ts, h){
 }
 
 
-xgStackEnsemble <- function(ts, h, validationSize = round(length(ts)/2)){
+xgStackEnsemble <- function(ts, h, validationSize = round(length(ts)/4)){
   # Demonstration of Ensemble Stacking Technique for Time series forecasts
   
   # Divide data into train and validation sets
@@ -91,7 +94,7 @@ xgStackEnsemble <- function(ts, h, validationSize = round(length(ts)/2)){
   # data points into actual validation observations
   xgStack <- xgboost(data = as.matrix(valMat), 
                      label = as.numeric(valid),
-                     nrounds = 2000,
+                     nrounds = 3000,
                      eta = 0.01)
   cat("XGB Stack completed")
   
@@ -103,6 +106,36 @@ xgStackEnsemble <- function(ts, h, validationSize = round(length(ts)/2)){
   cat("Predictions Made")
   # Return Predictions
   return(as.numeric(xgPred))
+}
+
+superEnsemble <- function(ts, h, validationSize = round(length(ts)/4)){
+  # Demonstration of Ensemble Stacking Technique for Time series forecasts
+  
+  # Divide data into train and validation sets
+  train <- head(ts, length(ts)-validationSize)
+  valid <- tail(ts, validationSize)
+  
+  # Using training data, make prediction on validation set using nEnsemble
+  valMat <- as.data.frame(naiveEnsemble(train, validationSize)[[1]])
+  cat("Validation Predications Made")
+  
+  # Use XGBoost algorithm to find best nonlinear transformation of forecasted validation
+  # data points into actual validation observations
+  model <- SuperLearner(Y = as.numeric(valid), 
+                        X = valMat, 
+                        family = gaussian(),
+                        SL.library = c("SL.glmnet", "SL.xgboost", "SL.svm"))
+  cat("Super Stack completed")
+  
+  # Combine train and validation sets to make forecasts h steps into the horizon
+  fcMat <- naiveEnsemble(ts, h)[[1]]
+  fcMat <- as.data.frame(fcMat)
+  cat("Forecast Matrix Created")
+  # Apply the learned XGBoost nonlinear transformation
+  xgPred <- predict(model, fcMat)
+  cat("Predictions Made")
+  # Return Predictions
+  return(as.numeric(xgPred$pred))
 }
 
 linStackEnsemble <- function(ts, h, validationSize = round(length(ts)/2)){
@@ -148,7 +181,7 @@ testing <- function(M3obj){
   h <- length(xx)
   Period <- M3obj$eriod
   Series <- M3obj$sn
-  seasonal <- findfrequency(ts)
+  seasonal <- frequency(ts)
   
   aa <- forecast(auto.arima(ts), h = h)$mean
   
@@ -161,8 +194,13 @@ testing <- function(M3obj){
   
   theta <- forecast(thetaf(ts, h = h), h = h)$mean
   
-  fcMat <- as.matrix(cbind(as.numeric(aa), as.numeric(bsts), as.numeric(ets), 
+  fcMat <- as.matrix(cbind(as.numeric(bsts), as.numeric(ets), as.numeric(aa), 
                            as.numeric(theta)))
+  
+  BEA <- rowMeans(fcMat[,c(1,2,3)])
+  EAT <- rowMeans(fcMat[,c(2,3,4)])
+  BAT <- rowMeans(fcMat[,c(1,3,4)])
+  BET <- rowMeans(fcMat[,c(1,2,4)])
   
   BEAT <-rowMeans(fcMat)
   
@@ -171,19 +209,27 @@ testing <- function(M3obj){
   XGStack <- xgStackEnsemble(ts, h = h)
   
   
-  fcList <- list(accuracy(aa,xx), accuracy(bsts,xx), accuracy(ets,xx), 
-                 accuracy(theta,xx), accuracy(BEAT,xx), accuracy(mBEAT,xx),
+  fcList <- list(accuracy(aa,xx), 
+                 accuracy(bsts,xx), 
+                 accuracy(ets,xx), 
+                 accuracy(theta,xx), 
+                 accuracy(BEA,xx), 
+                 accuracy(EAT,xx), 
+                 accuracy(BAT,xx), 
+                 accuracy(BET,xx), 
+                 accuracy(BEAT,xx), 
+                 accuracy(mBEAT,xx),
                  accuracy(XGStack, xx))
   
   out <- as.data.frame(do.call(rbind,fcList))
   out$Series <- Series
   out$Period <- Period
-  out$Method <- c("Auto.Arima", "BSTS", "ETS", "THETA", "BEAT", "mBEAT", "XGStack")
+  out$Method <- c("Auto.Arima", "BSTS", "ETS", "THETA", "BEA", "EAT", "BAT", "BET", "BEAT", "mBEAT", "XGStack")
   rownames(out) <- NULL
   out$ME <- out$ME/mean
   out$RMSE <- out$RMSE/mean
   out$MAE <- out$MAE/mean
-  out %>% dplyr::select(Series, Period, Method, ME, RMSE, MAE, MAPE)
+  out %>% dplyr::select(Series, Period, Method, RMSE, MAE, MAPE)
 }
 
 
@@ -207,9 +253,9 @@ testing <- function(M3obj){
 
 
 
-#samp <- sample(1:3003, 100)
+samp <- sample(1:3003, 100)
 timeOut <- system.time({ 
-  outDF <- foreach(i = 1:2000) %dopar% {
+  outDF <- foreach(i = samp) %dopar% {
     out <- testing(M3[[i]])
   }
 })
@@ -219,5 +265,5 @@ final <- chunk
 final <- rbind(final, chunk)
 
 # run at end
-final %>% group_by(Method) %>% summarise(RMSE = mean(RMSE), ME = mean(ME), MAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
+final %>% group_by(Method) %>% summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
 

@@ -91,8 +91,8 @@ xgStackEnsemble <- function(ts, h, validationSize = round(length(ts)/2)){
   # data points into actual validation observations
   xgStack <- xgboost(data = as.matrix(valMat), 
                      label = as.numeric(valid),
-                     nrounds = 1000,
-                     eta = 0.1)
+                     nrounds = 2000,
+                     eta = 0.01)
   cat("XGB Stack completed")
   
   # Combine train and validation sets to make forecasts h steps into the horizon
@@ -143,9 +143,8 @@ linStackEnsemble <- function(ts, h, validationSize = round(length(ts)/2)){
 
 testing <- function(M3obj){
   mean <- mean(c(M3obj$x, M3obj$xx))
-  sd <- sd(c(M3obj$x, M3obj$xx))
-  ts <- (M3obj$x - mean)/sd
-  xx <- (M3obj$xx-mean)/sd
+  ts <- M3obj$x
+  xx <- M3obj$xx
   h <- length(xx)
   Period <- M3obj$eriod
   Series <- M3obj$sn
@@ -181,33 +180,36 @@ testing <- function(M3obj){
   out$Period <- Period
   out$Method <- c("Auto.Arima", "BSTS", "ETS", "THETA", "BEAT", "mBEAT", "XGStack")
   rownames(out) <- NULL
+  out$ME <- out$ME/mean
+  out$RMSE <- out$RMSE/mean
+  out$MAE <- out$MAE/mean
   out %>% dplyr::select(Series, Period, Method, ME, RMSE, MAE, MAPE)
 }
 
 
-# Non Parallel
-list <- list()
-for(i in 1:100){
-  cat(i, '\n')
-  out <- testing(M3[[i]])
-  list[[i]] <- out
-}
-as.data.frame(do.call(rbind,list)) %>% group_by(Method) %>% summarise(RMSE = mean(RMSE), ME = mean(ME), MAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
+# # Non Parallel
+# list <- list()
+# for(i in 1:100){
+#   cat(i, '\n')
+#   out <- testing(M3[[i]])
+#   list[[i]] <- out
+# }
+# as.data.frame(do.call(rbind,list)) %>% group_by(Method) %>% summarise(RMSE = mean(RMSE), ME = mean(ME), MAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
+# 
+# list <- list()
+# n = 1
+# foreach(i=1:length(M3)) %dopar% {
+#   cat(n, "\n")
+#   out <- testing(M3[[i]])
+#   list[[i]] <- out
+#   n = n + 1
+# }
 
-list <- list()
-n = 1
-foreach(i=1:length(M3)) %dopar% {
-  cat(n, "\n")
-  out <- testing(M3[[i]])
-  list[[i]] <- out
-  n = n + 1
-}
 
 
-
-samp <- sample(1:3003, 100)
+#samp <- sample(1:3003, 100)
 timeOut <- system.time({ 
-  outDF <- foreach(i = samp) %dopar% {
+  outDF <- foreach(i = 1:2000) %dopar% {
     out <- testing(M3[[i]])
   }
 })

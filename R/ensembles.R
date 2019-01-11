@@ -179,7 +179,7 @@ testing <- function(M3obj){
   ts <- M3obj$x
   xx <- M3obj$xx
   h <- length(xx)
-  Period <- M3obj$eriod
+  Period <- M3obj$period
   Series <- M3obj$sn
   seasonal <- frequency(ts)
   
@@ -253,9 +253,9 @@ testing <- function(M3obj){
 
 
 
-samp <- sample(1:3003, 10)
+#samp <- sample(1:3003, 10)
 timeOut <- system.time({ 
-  outDF <- foreach(i = samp) %dopar% {
+  outDF <- foreach(i = 1:3003) %dopar% {
     out <- testing(M3[[i]])
   }
 })
@@ -265,5 +265,110 @@ final <- chunk
 final <- rbind(final, chunk)
 
 # run at end
-final %>% group_by(Method) %>% summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
+final %>% group_by(Period, Method) %>% summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
+
+M3df <- list()
+for(i in 1:length(M3)){
+  M3df[[i]] <- list(Name = M3[[i]]$sn, Period = M3[[i]]$period)
+}
+M3df <- as.data.frame(do.call(rbind,M3df))
+M3df <- data.frame(as.character(M3df$Name), as.character(M3df$Period))
+names(M3df) <- c("Series", "Period")                      
+
+final %>% left_join(M3df, by = c("Series")) %>% group_by(Period, Method) %>% summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
+
+
+pETS <- function(ts, h){
+  tsSD <- sd(ts)
+  fcList <- list()
+  for(i in 1:100){
+    perTS <- ts + rnorm(length(ts), 0, tsSD/length(ts))
+    fcList[[i]] <- as.numeric(forecast(ets(perTS), h = h)$mean)
+  }
+  as.numeric(colMeans(as.data.frame(do.call(rbind,fcList))))
+  
+}
+
+testing2 <- function(M3obj){
+  mean <- mean(c(M3obj$x, M3obj$xx))
+  ts <- M3obj$x
+  xx <- M3obj$xx
+  h <- length(xx)
+  Period <- M3obj$period
+  Series <- M3obj$sn
+  bBEAT <- baggedBEAT(ts, h)
+  
+  fcList <- list(accuracy(bBEAT,h))
+  
+  out <- as.data.frame(do.call(rbind,fcList))
+  out$Series <- Series
+  out$Period <- Period
+  out$Method <- c("baggedBEAT")
+  rownames(out) <- NULL
+  out$ME <- out$ME/mean
+  out$RMSE <- out$RMSE/mean
+  out$MAE <- out$MAE/mean
+  out %>% dplyr::select(Series, Period, Method, RMSE, MAE, MAPE)
+}
+
+samp <- sample(1:3003, 10)
+timeOut <- system.time({ 
+  outDF <- foreach(i = samp) %dopar% {
+    out <- testing(M3[[i]])
+  }
+})
+
+chunk <- as.data.frame(do.call(rbind, outDF))
+chunk %>% group_by(Method) %>% summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
+
+baggedTheta <- function(ts, h){
+  frequency <- frequency(ts)
+  if(length(ts)<2*frequency | frequency == 1){
+    ts <- as.numeric(ts)
+    length <- 1:length(ts)
+    model <- loess(ts ~ length)
+    trend <- model$fitted
+    decomp <- data.frame(seasonal = rep(0, length(ts)), 
+                         trend = model$fitted, 
+                         remainder = model$residuals)
+  }else{
+    decomp <- as.data.frame(stl(ts, 'periodic')$time.series)
+  }
+
+  out <- list()
+  for(i in 1:50){
+    bootDF <- decomp
+    bootErrors <- sample(decomp$remainder, length(decomp$remainder), replace = T)
+    bootDF$remainder <- bootErrors
+    ts <- ts(rowSums(bootDF), frequency = frequency)
+    out[[i]] <- as.numeric(forecast(thetaf(ts), h = h)$mean)
+  }
+  as.numeric(colMeans(as.data.frame(do.call(rbind, out))))
+}
+
+baggedBEAT <- function(ts, h){
+  frequency <- frequency(ts)
+  if(length(ts)<2*frequency | frequency == 1){
+    ts <- as.numeric(ts)
+    length <- 1:length(ts)
+    model <- loess(ts ~ length)
+    trend <- model$fitted
+    decomp <- data.frame(seasonal = rep(0, length(ts)), 
+                         trend = model$fitted, 
+                         remainder = model$residuals)
+  }else{
+    decomp <- as.data.frame(stl(ts, 'periodic')$time.series)
+  }
+  
+  out <- list()
+  for(i in 1:10){
+    cat(i)
+    bootDF <- decomp
+    bootErrors <- sample(decomp$remainder, length(decomp$remainder), replace = T)
+    bootDF$remainder <- bootErrors
+    ts <- ts(rowSums(bootDF), frequency = frequency)
+    out[[i]] <- as.numeric(naiveEnsemble(ts, h = h)[[2]])
+  }
+  as.numeric(colMeans(as.data.frame(do.call(rbind, out))))
+}
 

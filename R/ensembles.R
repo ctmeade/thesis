@@ -79,7 +79,7 @@ medianEnsemble <- function(ts, h){
 }
 
 
-xgStackEnsemble <- function(ts, h, validationSize = round(length(ts)/4)){
+xgStackEnsemble <- function(ts, h, validationSize = round(length(ts)/1.5)){
   # Demonstration of Ensemble Stacking Technique for Time series forecasts
   
   # Divide data into train and validation sets
@@ -108,7 +108,7 @@ xgStackEnsemble <- function(ts, h, validationSize = round(length(ts)/4)){
   return(as.numeric(xgPred))
 }
 
-superEnsemble <- function(ts, h, validationSize = round(length(ts)/4)){
+superEnsemble <- function(ts, h, validationSize = round(length(ts)/1.5)){
   # Demonstration of Ensemble Stacking Technique for Time series forecasts
   
   # Divide data into train and validation sets
@@ -207,7 +207,7 @@ testing <- function(M3obj){
   mBEAT <- apply(fcMat, 1, median)
   
   XGStack <- xgStackEnsemble(ts, h = h)
-  
+  #superStack <- superEnsemble(ts, h = h)
   
   fcList <- list(accuracy(aa,xx), 
                  accuracy(bsts,xx), 
@@ -253,7 +253,7 @@ testing <- function(M3obj){
 
 
 
-samp <- sample(1:3003, 100)
+samp <- sample(1:3003, 10)
 timeOut <- system.time({ 
   outDF <- foreach(i = samp) %dopar% {
     out <- testing(M3[[i]])

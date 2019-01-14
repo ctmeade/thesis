@@ -205,8 +205,8 @@ testing <- function(M3obj){
   BEAT <-rowMeans(fcMat)
   
   mBEAT <- apply(fcMat, 1, median)
-  
-  XGStack <- xgStackEnsemble(ts, h = h)
+  bBEAT <- baggedBEAT(ts, h)
+  #XGStack <- xgStackEnsemble(ts, h = h)
   #superStack <- superEnsemble(ts, h = h)
   
   fcList <- list(accuracy(aa,xx), 
@@ -219,12 +219,12 @@ testing <- function(M3obj){
                  accuracy(BET,xx), 
                  accuracy(BEAT,xx), 
                  accuracy(mBEAT,xx),
-                 accuracy(XGStack, xx))
+                 accuracy(bBEAT, xx))
   
   out <- as.data.frame(do.call(rbind,fcList))
   out$Series <- Series
   out$Period <- Period
-  out$Method <- c("Auto.Arima", "BSTS", "ETS", "THETA", "BEA", "EAT", "BAT", "BET", "BEAT", "mBEAT", "XGStack")
+  out$Method <- c("Auto.Arima", "BSTS", "ETS", "THETA", "BEA", "EAT", "BAT", "BET", "BEAT", "mBEAT", "bBEAT")
   rownames(out) <- NULL
   out$ME <- out$ME/mean
   out$RMSE <- out$RMSE/mean

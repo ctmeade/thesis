@@ -249,7 +249,11 @@ final %>% group_by(Period, Method) %>% summarise(mRMSE = mean(RMSE), mMAE = mean
 
 seqList <- split(1:3003, ceiling(seq_along(1:3003)/10))
 for(i in 1:length(seqList)){
-  
+  outDF <- foreach(i = seqList[[i]]) %dopar% {
+    out <- testing(M3[[i]])
+  }
+  chunk <- as.data.frame(do.call(rbind, outDF))
+  write.csv(chunk, paste(i, ".csv", sep = ""))
 }
 
 

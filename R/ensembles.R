@@ -46,6 +46,34 @@ naiveEnsemble <- function(ts, h){
   return(out)
 }
 
+EATEnsemble <- function(ts, h){
+  # ts is a time series object
+  # h is the forecast horizon, the number of data points into the future to forecast
+  
+  # Fit the automatic models to the ts object
+  # Arima Forecast
+  aa <- forecast(auto.arima(ts), h = h)$mean
+  
+  # Exponential Smoothing
+  ets <- forecast(ets(ts), h = h)$mean
+  
+  # Theta forecast
+  theta <- forecast(thetaf(ts, h = h), h = h)$mean
+  
+  # Combine each h by 1 forecast into a h by p matrix, where p is the number
+  # of models fit to the data
+  
+  # Forecast Matrix
+  fcMat <- as.matrix(cbind(as.numeric(aa), as.numeric(ets), 
+                           as.numeric(theta)))
+  
+  # Return the Forecast Matrix and the average forecast at each point on
+  # the horizon as a list object
+  out <- list(predictionMatrix = fcMat, forecast = rowMeans(fcMat))
+  
+  return(out)
+}
+
 medianEnsemble <- function(ts, h){
   # ts is a time series object
   # h is the forecast horizon, the number of data points into the future to forecast
@@ -156,6 +184,17 @@ baggedBEAT <- function(ts, h){
   
 }
 
+baggedEAT <- function(ts, h){
+  bootList <- bld.mbb.bootstrap(ts, 10)
+  
+  outDF <- foreach(i = 1:length(bootList)) %dopar% {
+    out <- as.numeric(EATEnsemble(bootList[[i]], h = h)[[2]])
+  }
+  
+  as.data.frame(do.call(rbind, outDF))
+  
+}
+
 pBEAT <- function(ts, h){
   bootList <- error.resamp(ts, 10)
   
@@ -233,10 +272,36 @@ testing <- function(M3obj){
   out %>% dplyr::select(Series, Period, Method, RMSE, MAE, MAPE)
 }
 
+testing2 <- function(M3obj){
+  mean <- mean(M3obj$x)
+  ts <- M3obj$x
+  xx <- M3obj$xx
+  h <- length(xx)
+  Period <- M3obj$period
+  Series <- M3obj$sn
+  
+  baggedEAT <- baggedEAT(ts, h)
+  meanBaggedEAT <- as.numeric(colMeans(baggedEAT))
+  
+  fcList <- list(accuracy(meanBaggedEAT,xx)
+                 
+  )
+  
+  out <- as.data.frame(do.call(rbind,fcList))
+  out$Series <- Series
+  out$Period <- Period
+  out$Method <- c("meanBaggedEAT")
+  rownames(out) <- NULL
+  out$ME <- out$ME/mean
+  out$RMSE <- out$RMSE/mean
+  out$MAE <- out$MAE/mean
+  out %>% dplyr::select(Series, Period, Method, RMSE, MAE, MAPE)
+}
+
 samp <- sample(1:3003, 1)
 timeOut <- system.time({ 
-  outDF <- foreach(i = samp) %dopar% {
-    out <- testing(M3[[i]])
+  outDF <- foreach(i = 1:3003) %dopar% {
+    out <- testing2(M3[[i]])
   }
 })
 
@@ -250,25 +315,42 @@ final %>% group_by(Period, Method) %>% summarise(mRMSE = mean(RMSE), mMAE = mean
 seqList <- split(1:3003, ceiling(seq_along(1:3003)/10))
 for(i in 1:length(seqList)){
   outDF <- foreach(i = seqList[[i]]) %dopar% {
-    out <- testing(M3[[i]])
+    out <- testing2(M3[[i]])
   }
   chunk <- as.data.frame(do.call(rbind, outDF))
   write.csv(chunk, paste(i, ".csv", sep = ""))
 }
 
 
+filenames <- list.files(full.names=TRUE)
+All <- lapply(filenames,function(i){
+  read.csv(i, header=T, skip=0)
+})
+data <- as.data.frame(do.call(rbind, All))
 
+data %>% 
+  group_by(Method) %>% 
+  summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
 
+data %>% 
+  dplyr::filter(Period == "MONTHLY") %>% 
+  group_by(Method) %>% 
+  summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> monthly
 
+data %>% 
+  dplyr::filter(Period == "YEARLY") %>% 
+  group_by(Method) %>% 
+  summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> yearly
 
+data %>% 
+  dplyr::filter(Period == "QUARTERLY") %>% 
+  group_by(Method) %>% 
+  summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> quarterly
 
-
-
-
-
-
-
-
+data %>% 
+  dplyr::filter(Period == "OTHER") %>% 
+  group_by(Method) %>% 
+  summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> other
 # # run at end
 # final %>% group_by(Period, Method) %>% summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
 # 

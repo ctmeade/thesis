@@ -185,7 +185,7 @@ baggedBEAT <- function(ts, h){
 }
 
 baggedEAT <- function(ts, h){
-  bootList <- bld.mbb.bootstrap(ts, 10)
+  bootList <- bld.mbb.bootstrap(ts, 100)
   
   outDF <- foreach(i = 1:length(bootList)) %dopar% {
     out <- as.numeric(EATEnsemble(bootList[[i]], h = h)[[2]])
@@ -290,7 +290,7 @@ testing2 <- function(M3obj){
   out <- as.data.frame(do.call(rbind,fcList))
   out$Series <- Series
   out$Period <- Period
-  out$Method <- c("meanBaggedEAT")
+  out$Method <- c("meanBaggedEAT200")
   rownames(out) <- NULL
   out$ME <- out$ME/mean
   out$RMSE <- out$RMSE/mean
@@ -312,8 +312,8 @@ final %>% group_by(Period, Method) %>% summarise(mRMSE = mean(RMSE), mMAE = mean
 
 
 
-seqList <- split(1:3003, ceiling(seq_along(1:3003)/10))
-for(i in 1:length(seqList)){
+seqList <- split(1:3003, ceiling(seq_along(1:3003)/5))
+for(i in 177:length(seqList)){
   outDF <- foreach(i = seqList[[i]]) %dopar% {
     out <- testing2(M3[[i]])
   }
@@ -328,16 +328,16 @@ All <- lapply(filenames,function(i){
 })
 data <- as.data.frame(do.call(rbind, All))
 
-data %>% 
+full %>% 
   group_by(Method) %>% 
   summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
 
-data %>% 
+full %>% 
   dplyr::filter(Period == "MONTHLY") %>% 
   group_by(Method) %>% 
   summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> monthly
 
-data %>% 
+full %>% 
   dplyr::filter(Period == "YEARLY") %>% 
   group_by(Method) %>% 
   summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> yearly

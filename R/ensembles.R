@@ -313,7 +313,7 @@ final %>% group_by(Period, Method) %>% summarise(mRMSE = mean(RMSE), mMAE = mean
 
 
 seqList <- split(1:3003, ceiling(seq_along(1:3003)/5))
-for(i in 177:length(seqList)){
+for(i in 1:length(seqList)){
   outDF <- foreach(i = seqList[[i]]) %dopar% {
     out <- testing2(M3[[i]])
   }

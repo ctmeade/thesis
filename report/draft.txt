@@ -20,22 +20,33 @@ Several scenarios exist that necessitate automatic time series forecasting. A ma
 
 In such situations, automatic ‘black box’ time series forecasting methods, like those implemented in the popular “forecast” R software library by Rob J. Hyndman and the ‘bsts’ package by Steven L. Scott, deliver a compelling value proposition — adequate forecasts can be made almost instantly by anyone. Even if these automatic methods do not perform as well as the ideal, manually fitted ARIMA model,  the value they create by reducing forecast costs (in hours of work or in time to model) can easily surpass the cost associated with implementing a less-than-ideal forecast. In the first scenario given above, 1000 adequate production-ready forecasts are better than 100 excellent forecasts and 900 missing values because the statistician ran out of time.
 
-The work presented in this paper deals with how these ‘black box’ automatic methods can improved, so that a forecaster need not settle with adequate performance while still enjoying the benefits that black box methods provide. To that end, we explore several ways to create ensembles of four of the popular black box models included in the ‘forecast’ and ‘bsts’ packages to increase prediction accuracy over any single automatically fit model alone. To evaluate the performance of the ensembles, they will be tested with the M3-Competition dataset, which contains 3,003 univariate time series with mostly monthly, quarterly, and yearly periods. Each series in the dataset is split into a training and test set, the latter of which will be used to evaluate loss using root mean squared error (RMSE), mean absolute percent error (MAPE), and mean absolute error (MAE).
-
-Related Work:
+The work presented in this paper deals with how these ‘black box’ automatic methods can improved, so that a forecaster need not settle with adequate performance while still enjoying the benefits that black box methods provide. To that end, we explore several ways to create ensembles of four of the popular black box models included in the ‘forecast’ and ‘bsts’ packages to increase prediction accuracy over any single automatically fit model alone. To evaluate the performance of the ensembles, they will be tested with the M3-Competition dataset, which contains 3,003 univariate time series with mostly monthly, quarterly, and yearly periods. Each series in the dataset is split into a training and test set, the latter of which will be used to evaluate loss using normalized root mean squared error (nRMSE), mean absolute percent error (MAPE), and normalized mean absolute error (nMAE).
 
 Members of the Ensemble
 
-The time series ensembles proposed in this paper will be composed of combinations of four classes of models that can be fit automatically using the `forecast` package in R. They are as follows:
+The time series ensembles proposed in this paper will be composed of combinations of four classes of models that can be fit automatically using the `forecast` and `bsts` packages in R. They are as follows:
 
-Expand on:
-`auto.arima()`: iterates over given parameter space of model order, estimates parameters for each, and chooses ‘best’ based on information criterion (AIC,  AICc, or BIC)
+Auto.Arima
 
-`ets()`: short for “error, trend, seasonal”, the `ets()` function. Fit 30 different classes of exponential smoothing models to data, chooses best on basis of AIC.
+Proposed by Hyndman and Khandakar (2007), Auto.Arima was designed to automatically select the best Autoregressive Integrated Moving Average (ARIMA) model for forecasting. Given a nonseasonal ARIMA(p,d,q) process $(1-B^d)y_t=c+\phi(B)y_t+\theta(B)\epsilon_t or seasonal ARIMA(p,d,q,P,D,Q)_m process $(1-B^m)(1-B)^dy_t=c+\PHI(B^m)\phi(B)y_t+\THETA(B^m)\theta(B)\epsilon_t$, $\phi$ and $\theta$ are polynomials with orders $p $ and $q$ respectively, $\PHI$ and $\THETA$ are polynomials with orders $P$ and $Q$ respectively, $d$ and $D$ are the respective numbers of nonseasonal and seasonal differences, $B$ is the backshift operator, $\epsilon$ is gaussian white noise with mean $0$ and variance $\sigma^2$, and $c$ is a constant.
 
-`bsts()`: “
+The goal of ARIMA modeling is to choose the parameters $p$, $d$, $q$, $P$, $D$, and $Q$ which best fit the data, which can be evaluated by minimizing an information criterion, such as AIC or BIC.
 
-`thetaf()`: fit model using theta method described in Assimakopoulos, 2000.
+Auto.Arima provides a framework to automate the ARIMA parameter optimization. If the data are nonseasonal, the algorithm first chooses $d$ on the basis of KPSS unit-root tests, by which the data checked for a unit root (Kwiatkowski et al., 1992). If a root is present, it is differenced and checked again. The process repeats until no unit root is detected. 
+
+For seasonal data, is first $D$ is chosen to equal $0$ or $1$ on the basis of the Canova-Hansen test (Canova and Hansen, 1995). If $D=1$, seasonal differencing is applied. Then the KPSS unit-root test process is applied to select $d$.
+
+Auto.Arima then considers ARIMA models where $p$ and $q$ can values ranging from $0$ to $3$ and, if applicable, $P$ and $Q$ can be set equal to $0$ or $1$. If $d+D\leq 1$, the constant $c$ is fit. Otherwise it is set equal to $0$. For the sake of efficiency, the model space is explored using a novel step-wise algorithms. Finally, the model which minimizes AIC is returned at the “best” model.
+
+ETS
+
+ short for “error, trend, seasonal”, the `ets()` function. Fit 30 different classes of exponential smoothing models to data, chooses best on basis of AIC.
+
+BSTS
+
+`Theta: 
+
+fit model using theta method described in Assimakopoulos, 2000.
 
 
 The Case for Ensembles
@@ -48,7 +59,7 @@ The use of ensembles to improve prediction accuracy is nothing new in the realm 
 
 Application to Time Series
 
-	How, then, can an ensemble of uncorrelated time series models be constructed? The predictions from two reasonable ARIMA models fit to the same data will likely have a correlation coefficient close to one. An ensemble created from these two models will likely look very similar to both of the original forecasts.
+	How, then, can an ensemble of uncorrelated time series models be constructed? The predictions from two reasonable ARIMA models fit to the same data will likely have a correlation coefficient close to one. An ensemble created from these two models will likely look very similar to both of the original forecasts and would therefore likely not reap the benefits of ensembling. 
 	In time series forecasting, a natural way to create diverse forecasts is to combine the forecasts of different classes of time series models, such as the ARIMA, Theta, Exponential Smoothing, and Bayesian Structural Time Series discussed in the previous section. Because forecasts created these different classes of models will naturally vary, an ensemble of these learners should enjoy the same benefits, namely a increase in prediction accuracy from a reduction in bias and variance and a robustness to training noise and outliers, as those ensemble methods mentioned above.
 
 Expand on:
@@ -72,6 +83,24 @@ The Naive Ensembles proposed in the previous section simply take the average of 
 
 One solution to combat the influence of an extreme forecast is to take the median, rather than the mean, of the p predictors at each time point in the forecast horizon. If X is the same h by p forecast matrix, let M = [m_1, … , m_h] be the final forecast, where each m_i is the median i’th row of X, i = 1,…,h. We will refer to this method as the Median Ensemble.
 
+Bagged Ensemble
+Just how Breiman introduced bootstrap aggregation (bagging) to improve the accuracy of classification and regression tree ensembles, so too can bagging be used in time series analysis to improve forecasts. Because of the order-dependent nature of time series, the standard methodology of resampling data points with replacement is ill-suited to create bootstrapped series.  Bergmeir et. al. (2016) proposes an adaptation specifically suited for time series analysis in such a way that the trend and seasonal structure of the time series is preserved.
+	The Box-Cox transformation, shown below, is applied to the series to ensure that its trend and seasonality components are additive (Petropoulosa et. al., 2018). Lambda is chosen on the basis of maximum likelihood estimation (Box & Cox, 1964). The Box-Cox transformed series is then decomposed into in seasonal, trend, and error components using LOESS (STL) (Cleveland et al., 1990). Bootstrapped resampling is then applied to the error components of the series. Bergmeir et. al. utilize moving block bootstrap (Künsch 1989), whereby n data points are assigned to n-b+a overlapping blocks, each with length b. Then n/b blocks are drawn with replace and assigned in the order that they were drawn, creating a bootstrapped set of errors. This method is utilized in the event that there is any remaining autocorrelation in the LOESS residuals after the STL decomposition. 
+	A new bootstrapped time series is then constructed by performing the inverse STL decomposition, whereby the trend, seasonality, and bootstrapped error terms are added together. The inverse Box-Cox transformation is then applied to return the time series to its original scale. This process then repeated a given number of times to create a set of bootstrapped series.
+	If a time series is not periodic, or has fewer than two periods, the Box-Cox transformation is applied, after which the series is decomposed into trend and error components using LOESS. Seasonality is not calculated. Then the same procedure as above is followed to create a set of bootstrapped time series.
+	Bergmeir et. al. then fit an ETS model to each of the bootstrapped time series, make a forecast, then take the median of the component forecasts for each point on the forecast horizon to make a final prediction. This method was found to perform better than the ETS model alone the M3 Competition Dataset. 
+	We propose the following adaptation to this method: given that we expect the BEAT ensemble to perform better than ETS alone under our ensemble hypothesis, we fit a BEAT ensemble to each bootstrapped time series instead of an ETS model. Final forecasts will then be made by taking an equal-weight average of the BEAT point forecasts for each point on the forecast horizon. We also evaluate the median of the BEAT models, as done in the original paper.
+
+Random Error Resampling Ensemble
+
+We propose the Random Error Resampling ensemble model for time series forecasting. This model is functionally very similar to the bagged model proposed in the previous section. Bagging utilizes bootstrap resampling of residuals after performing STL decomposition of a time series. However, it is common in time series literature to assume that these errors are distributed as gaussian white noise with mean 0 and a finite variance (Schumway 2011). 
+	Therefore, instead of applying bootstrap resampling to STL residuals to create a new set of bootstrapped time series, we create a new set of residuals by sampling from a gaussian distribution with mean 0 and variance equal to the sample variance of the original STL residuals. We repeat this resampling a number of times to create a bootstrapped set of time series.
+Except for this step, the process is exactly the same as the bagged BEAT model. We evaluate the performance of this ensemble using both the mean and median of the component BEAT forecasts.
+
+
+Summary of Ensemble Table
+
+
 
 
 Methodology
@@ -81,4 +110,4 @@ Metrics: RMSE, MAPE, MAE for each series. Problem: RMSE and MAE are scale depend
 nRMSE: sqrt(\sum_{i=1}^T(\hat{y}_t-y_t)^2/T}/\bar{Y}
 nMAE: \sum_{i=1}^T|\hat{y}_t-y_t)|/T}/\bar{Y}
 MAPE: 1/T \sum_{i=1}^T |\hat{y}_t-y_t)|/y_t
-In evaluating the nRMSE, nMAE, and MAPE for each method on each of the time series in the competition dataset
+A smaller number represents a more accurate forecast in each of the three metrics. In evaluating the nRMSE, nMAE, and MAPE for each method on each of the time series in the competition dataset

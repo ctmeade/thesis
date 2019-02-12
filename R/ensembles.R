@@ -327,6 +327,16 @@ All <- lapply(filenames,function(i){
   read.csv(i, header=T, skip=0)
 })
 data <- as.data.frame(do.call(rbind, All))
+levels(data$Method)[levels(data$Method)=="meanBaggedEAT200"] <- "meanBaggedEAT_100"
+levels(data$Method)[levels(data$Method)=="meanBaggedEAT"] <- "meanBaggedEAT_10"
+levels(data$Method)[levels(data$Method)=="meanBaggedBEAT"] <- "meanBaggedBEAT_10"
+levels(data$Method)[levels(data$Method)=="meanPertBEAT"] <- "meanPertBEAT_10"
+levels(data$Method)[levels(data$Method)=="medianPertBEAT"] <- "medianPertBEAT_10"
+levels(data$Method)[levels(data$Method)=="medianBaggedBEAT"] <- "medianBaggedBEAT_10"
+
+
+
+full <- data
 
 full %>% 
   group_by(Method) %>% 
@@ -342,12 +352,12 @@ full %>%
   group_by(Method) %>% 
   summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> yearly
 
-data %>% 
+full %>% 
   dplyr::filter(Period == "QUARTERLY") %>% 
   group_by(Method) %>% 
   summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> quarterly
 
-data %>% 
+full %>% 
   dplyr::filter(Period == "OTHER") %>% 
   group_by(Method) %>% 
   summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> other

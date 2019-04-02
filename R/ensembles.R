@@ -361,6 +361,10 @@ full %>%
   dplyr::filter(Period == "OTHER") %>% 
   group_by(Method) %>% 
   summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> other
+
+full %>% 
+  group_by(Method) %>% 
+  summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> summary
 # # run at end
 # final %>% group_by(Period, Method) %>% summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
 # 

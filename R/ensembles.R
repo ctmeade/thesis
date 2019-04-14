@@ -7,7 +7,7 @@ library(SuperLearner)
 library(parallel)
 library(doMC)
 library(e1071)
-library(bartMachine)
+#library(bartMachine)
 
 doMC::registerDoMC(cores = detectCores())
 
@@ -206,12 +206,14 @@ pBEAT <- function(ts, h){
 }
 
 testing <- function(M3obj){
+  outList <- list()
   mean <- mean(M3obj$x)
   ts <- M3obj$x
   xx <- M3obj$xx
   h <- length(xx)
   Period <- M3obj$period
   Series <- M3obj$sn
+  Type <- M3obj$type
   seasonal <- frequency(ts)
   
   aa <- forecast(auto.arima(ts), h = h)$mean
@@ -264,61 +266,81 @@ testing <- function(M3obj){
   out <- as.data.frame(do.call(rbind,fcList))
   out$Series <- Series
   out$Period <- Period
+  out$Type <- Type
   out$Method <- c("Auto.Arima", "BSTS", "ETS", "THETA", "BEA", "EAT", "BAT", "BET", "BEAT", "medianBEAT", "meanBaggedBEAT", "medianBaggedBEAT", "meanPertBEAT", "medianPertBEAT")
   rownames(out) <- NULL
   out$ME <- out$ME/mean
   out$RMSE <- out$RMSE/mean
   out$MAE <- out$MAE/mean
-  out %>% dplyr::select(Series, Period, Method, RMSE, MAE, MAPE)
+  
+  out %>% dplyr::select(Series, Type, Period, Method, RMSE, MAE, MAPE) -> outList[[1]]
+  
+  errorDF <- as.data.frame(rbind(c(aa,
+                                  bsts, 
+                                  ets,
+                                  theta, 
+                                  BEA, 
+                                  EAT,
+                                  BAT, 
+                                  BET, 
+                                  BEAT, 
+                                  mBEAT,
+                                  meanBaggedBEAT,
+                                  medianBaggedBEAT,
+                                  meanPertBEAT,
+                                  medianPertBEAT)))
+  
+  outList[[2]] <- errorDF
+  outList
 }
 
-testing2 <- function(M3obj){
-  mean <- mean(M3obj$x)
-  ts <- M3obj$x
-  xx <- M3obj$xx
-  h <- length(xx)
-  Period <- M3obj$period
-  Series <- M3obj$sn
-  
-  baggedEAT <- baggedEAT(ts, h)
-  meanBaggedEAT <- as.numeric(colMeans(baggedEAT))
-  
-  fcList <- list(accuracy(meanBaggedEAT,xx)
-                 
-  )
-  
-  out <- as.data.frame(do.call(rbind,fcList))
-  out$Series <- Series
-  out$Period <- Period
-  out$Method <- c("meanBaggedEAT200")
-  rownames(out) <- NULL
-  out$ME <- out$ME/mean
-  out$RMSE <- out$RMSE/mean
-  out$MAE <- out$MAE/mean
-  out %>% dplyr::select(Series, Period, Method, RMSE, MAE, MAPE)
-}
-
-samp <- sample(1:3003, 1)
-timeOut <- system.time({ 
-  outDF <- foreach(i = 1:3003) %dopar% {
-    out <- testing2(M3[[i]])
-  }
-})
-
-chunk <- as.data.frame(do.call(rbind, outDF))
-final <- chunk
-final <- rbind(final, chunk)
-final %>% group_by(Period, Method) %>% summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
+# testing2 <- function(M3obj){
+#   mean <- mean(M3obj$x)
+#   ts <- M3obj$x
+#   xx <- M3obj$xx
+#   h <- length(xx)
+#   Period <- M3obj$period
+#   Series <- M3obj$sn
+#   
+#   baggedEAT <- baggedEAT(ts, h)
+#   meanBaggedEAT <- as.numeric(colMeans(baggedEAT))
+#   
+#   fcList <- list(accuracy(meanBaggedEAT,xx)
+#                  
+#   )
+#   
+#   out <- as.data.frame(do.call(rbind,fcList))
+#   out$Series <- Series
+#   out$Period <- Period
+#   out$Method <- c("meanBaggedEAT200")
+#   rownames(out) <- NULL
+#   out$ME <- out$ME/mean
+#   out$RMSE <- out$RMSE/mean
+#   out$MAE <- out$MAE/mean
+#   out %>% dplyr::select(Series, Period, Method, RMSE, MAE, MAPE)
+# }
+# 
+# samp <- sample(1:3003, 1)
+# timeOut <- system.time({ 
+#   outDF <- foreach(i = 1:3003) %dopar% {
+#     out <- testing2(M3[[i]])
+#   }
+# })
+# 
+# chunk <- as.data.frame(do.call(rbind, outDF))
+# final <- chunk
+# final <- rbind(final, chunk)
+# final %>% group_by(Period, Method) %>% summarise(mRMSE = mean(RMSE), mMAE = mean(MAE), MAPE = mean(MAPE)) -> accuracy
 
 
 
 seqList <- split(1:3003, ceiling(seq_along(1:3003)/5))
 for(i in 1:length(seqList)){
   outDF <- foreach(i = seqList[[i]]) %dopar% {
-    out <- testing2(M3[[i]])
+    out <- testing(M3[[i]])
   }
-  chunk <- as.data.frame(do.call(rbind, outDF))
-  write.csv(chunk, paste(i, ".csv", sep = ""))
+  #chunk <- as.data.frame(do.call(rbind, outDF))
+  #write.csv(chunk, paste(i, ".csv", sep = ""))
 }
 
 
